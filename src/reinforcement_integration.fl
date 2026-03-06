@@ -1,0 +1,499 @@
+// GRIE Phase 3: Module 5 - Reinforcement Integration (600줄)
+// Agent-graph 상호작용, Reward shaping, Learning loop, Policy improvement
+
+struct GRIEAgent {
+    rl_agent: any,
+    knowledge_graph: any,
+    extraction_model: any,
+    current_state: State,
+    episode_reward: f64,
+    improvement_rate: f64
+}
+
+struct RewardSignal {
+    base_reward: f64,
+    entity_bonus: f64,
+    relation_bonus: f64,
+    quality_bonus: f64,
+    total_reward: f64
+}
+
+struct LearningEpisode {
+    episode_id: i32,
+    states: array,
+    actions: array,
+    rewards: array,
+    episode_reward: f64,
+    learning_progress: f64
+}
+
+struct PolicyImprovement {
+    old_policy_reward: f64,
+    new_policy_reward: f64,
+    improvement_percentage: f64,
+    convergence_rate: f64
+}
+
+// GRIE Agent Creation
+fn create_grie_agent(rl_agent: any, kg_store: any) -> GRIEAgent {
+    let agent = GRIEAgent {
+        rl_agent: rl_agent,
+        knowledge_graph: kg_store,
+        extraction_model: null,
+        current_state: null,
+        episode_reward: 0.0,
+        improvement_rate: 0.0
+    };
+    return agent;
+}
+
+// Reward Shaping
+fn create_reward_signal() -> RewardSignal {
+    let signal = RewardSignal {
+        base_reward: 0.0,
+        entity_bonus: 0.0,
+        relation_bonus: 0.0,
+        quality_bonus: 0.0,
+        total_reward: 0.0
+    };
+    return signal;
+}
+
+fn compute_reward(state: State, action: Action, extraction_result: ExtractionResult) -> RewardSignal {
+    let signal = create_reward_signal();
+
+    // Base reward for valid action
+    signal.base_reward = 0.1;
+
+    // Entity bonus based on quality
+    let entity_count = length(extraction_result.entities);
+    if entity_count > 0 {
+        signal.entity_bonus = 0.3 * (as_f64(entity_count) / 10.0);
+        if signal.entity_bonus > 0.3 {
+            signal.entity_bonus = 0.3;
+        }
+    }
+
+    // Relation bonus
+    let relation_count = length(extraction_result.relations);
+    if relation_count > 0 {
+        signal.relation_bonus = 0.2 * (as_f64(relation_count) / 10.0);
+        if signal.relation_bonus > 0.2 {
+            signal.relation_bonus = 0.2;
+        }
+    }
+
+    // Quality bonus
+    signal.quality_bonus = extraction_result.quality_score * 0.4;
+
+    // Total reward
+    signal.total_reward = signal.base_reward + signal.entity_bonus + signal.relation_bonus + signal.quality_bonus;
+
+    return signal;
+}
+
+fn as_f64(val: i32) -> f64 {
+    return 1.0 * val;
+}
+
+// Learning Episode Execution
+fn create_learning_episode(episode_id: i32) -> LearningEpisode {
+    let episode = LearningEpisode {
+        episode_id: episode_id,
+        states: [],
+        actions: [],
+        rewards: [],
+        episode_reward: 0.0,
+        learning_progress: 0.0
+    };
+    return episode;
+}
+
+fn execute_episode(agent: GRIEAgent, text: string, max_steps: i32) -> LearningEpisode {
+    let episode = create_learning_episode(agent.rl_agent["episode_count"]);
+
+    let step = 0;
+    let state = initialize_state_from_text(text);
+
+    while step < max_steps {
+        push(episode.states, state);
+
+        // Select action
+        let possible_actions = get_possible_actions(agent, state);
+        let action = select_action_epsilon_greedy(agent.rl_agent, state, possible_actions);
+        push(episode.actions, action);
+
+        // Execute action (extract information)
+        let extraction_result = execute_extraction_action(agent, state, action, text);
+
+        // Compute reward
+        let reward_signal = compute_reward(state, action, extraction_result);
+        let reward = reward_signal.total_reward;
+        push(episode.rewards, reward);
+
+        episode.episode_reward = episode.episode_reward + reward;
+
+        // Update KG
+        update_knowledge_graph(agent.knowledge_graph, extraction_result);
+
+        // Compute next state
+        let next_state = update_state_from_result(state, extraction_result);
+
+        // Q-learning update
+        train_step(agent.rl_agent, state, action, reward, next_state, false);
+
+        state = next_state;
+        step = step + 1;
+    }
+
+    // Compute episode learning progress
+    episode.learning_progress = compute_learning_progress(episode);
+
+    agent.episode_reward = episode.episode_reward;
+
+    return episode;
+}
+
+fn initialize_state_from_text(text: string) -> State {
+    let state = State {
+        node_id: "ROOT",
+        entity_type: "DOCUMENT",
+        context: {},
+        feature_vector: initialize_feature_vector()
+    };
+    return state;
+}
+
+fn initialize_feature_vector() -> array {
+    let vec = [];
+    let i = 0;
+    while i < 64 {
+        push(vec, 0.1);
+        i = i + 1;
+    }
+    return vec;
+}
+
+fn get_possible_actions(agent: GRIEAgent, state: State) -> array {
+    let actions = [];
+
+    // Action: Extract entities
+    let action1 = Action {
+        type: "extract_entities",
+        target_node: "*",
+        relation_type: "*",
+        confidence: 0.8
+    };
+    push(actions, action1);
+
+    // Action: Extract relations
+    let action2 = Action {
+        type: "extract_relations",
+        target_node: "*",
+        relation_type: "WORKS_FOR",
+        confidence: 0.8
+    };
+    push(actions, action2);
+
+    // Action: Refine extraction
+    let action3 = Action {
+        type: "refine_extraction",
+        target_node: state.node_id,
+        relation_type: "*",
+        confidence: 0.7
+    };
+    push(actions, action3);
+
+    // Action: Update graph
+    let action4 = Action {
+        type: "update_graph",
+        target_node: "*",
+        relation_type: "*",
+        confidence: 0.75
+    };
+    push(actions, action4);
+
+    return actions;
+}
+
+fn select_action_epsilon_greedy(rl_agent: any, state: State, possible_actions: array) -> Action {
+    // Simplified epsilon-greedy selection
+    if length(possible_actions) == 0 {
+        return null;
+    }
+
+    let epsilon = rl_agent["epsilon"];
+    let rand = random_value();
+
+    if rand < epsilon {
+        // Exploration: random
+        let idx = 0;
+        if length(possible_actions) > 1 {
+            idx = 1;
+        }
+        return possible_actions[idx];
+    } else {
+        // Exploitation: first action
+        return possible_actions[0];
+    }
+}
+
+fn random_value() -> f64 {
+    return 0.5;  // Simulated
+}
+
+fn execute_extraction_action(agent: GRIEAgent, state: State, action: Action, text: string) -> ExtractionResult {
+    let result = ExtractionResult {
+        entities: [],
+        relations: [],
+        confidence_scores: {},
+        quality_score: 0.0
+    };
+
+    // Simulated extraction based on action type
+    if action.type == "extract_entities" {
+        // Extract entities from text
+        result.entities = simulate_entity_extraction(text);
+    } else if action.type == "extract_relations" {
+        // Extract relations
+        result.relations = simulate_relation_extraction(text, action.relation_type);
+    } else if action.type == "refine_extraction" {
+        // Refine based on context
+        result.entities = simulate_entity_extraction(text);
+        result.relations = simulate_relation_extraction(text, "*");
+    }
+
+    // Compute quality score
+    result.quality_score = compute_extraction_quality_score(result);
+
+    return result;
+}
+
+fn simulate_entity_extraction(text: string) -> array {
+    let entities = [];
+
+    // Simulated: detect "John" as person
+    if text_contains(text, "John") {
+        let entity = Entity {
+            id: "E1",
+            text: "John",
+            type: "PERSON",
+            confidence: 0.9,
+            start: 0,
+            end: 1
+        };
+        push(entities, entity);
+    }
+
+    // Simulated: detect "Google" as organization
+    if text_contains(text, "Google") {
+        let entity = Entity {
+            id: "E2",
+            text: "Google",
+            type: "ORGANIZATION",
+            confidence: 0.95,
+            start: 0,
+            end: 1
+        };
+        push(entities, entity);
+    }
+
+    return entities;
+}
+
+fn simulate_relation_extraction(text: string, rel_type: string) -> array {
+    let relations = [];
+
+    if rel_type == "WORKS_FOR" || rel_type == "*" {
+        if text_contains(text, "works") {
+            let rel = Relation {
+                source_id: "E1",
+                target_id: "E2",
+                relation_type: "WORKS_FOR",
+                confidence: 0.87,
+                evidence: "works keyword"
+            };
+            push(relations, rel);
+        }
+    }
+
+    return relations;
+}
+
+fn text_contains(text: string, substring: string) -> bool {
+    let i = 0;
+    let sub_len = length(substring);
+
+    while i <= length(text) - sub_len {
+        if substring_equals(text, i, substring) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn substring_equals(text: string, start: i32, substring: string) -> bool {
+    // Simulated substring matching
+    return false;  // For simplicity in simulation
+}
+
+fn compute_extraction_quality_score(result: ExtractionResult) -> f64 {
+    if length(result.entities) == 0 {
+        return 0.3;
+    }
+
+    let entity_score = 0.0;
+    let i = 0;
+    while i < length(result.entities) {
+        let entity = result.entities[i];
+        entity_score = entity_score + entity.confidence;
+        i = i + 1;
+    }
+    entity_score = entity_score / as_f64(length(result.entities));
+
+    let relation_score = 0.0;
+    if length(result.relations) > 0 {
+        i = 0;
+        while i < length(result.relations) {
+            let rel = result.relations[i];
+            relation_score = relation_score + rel.confidence;
+            i = i + 1;
+        }
+        relation_score = relation_score / as_f64(length(result.relations));
+    } else {
+        relation_score = 0.5;
+    }
+
+    return entity_score * 0.6 + relation_score * 0.4;
+}
+
+fn update_state_from_result(old_state: State, result: ExtractionResult) -> State {
+    let new_state = State {
+        node_id: old_state.node_id + "_updated",
+        entity_type: old_state.entity_type,
+        context: old_state.context,
+        feature_vector: update_feature_vector(old_state.feature_vector, result)
+    };
+    return new_state;
+}
+
+fn update_feature_vector(old_vec: array, result: ExtractionResult) -> array {
+    let new_vec = copy_array(old_vec);
+
+    // Update features based on extraction result
+    let entity_count = length(result.entities);
+    if entity_count < length(new_vec) {
+        new_vec[0] = as_f64(entity_count) / 10.0;
+    }
+
+    let relation_count = length(result.relations);
+    if relation_count < length(new_vec) {
+        new_vec[1] = as_f64(relation_count) / 10.0;
+    }
+
+    new_vec[2] = result.quality_score;
+
+    return new_vec;
+}
+
+fn copy_array(arr: array) -> array {
+    let copy = [];
+    let i = 0;
+    while i < length(arr) {
+        push(copy, arr[i]);
+        i = i + 1;
+    }
+    return copy;
+}
+
+fn update_knowledge_graph(kg_store: any, result: ExtractionResult) -> void {
+    // Add entities and relations to KG (simulated)
+}
+
+fn train_step(rl_agent: any, state: State, action: Action, reward: f64, next_state: State, done: bool) -> void {
+    // Placeholder for Q-learning update
+}
+
+// Policy Improvement Tracking
+fn track_policy_improvement(old_reward: f64, new_reward: f64) -> PolicyImprovement {
+    let improvement = PolicyImprovement {
+        old_policy_reward: old_reward,
+        new_policy_reward: new_reward,
+        improvement_percentage: 0.0,
+        convergence_rate: 0.0
+    };
+
+    if old_reward != 0.0 {
+        improvement.improvement_percentage = ((new_reward - old_reward) / old_reward) * 100.0;
+    }
+
+    // Convergence rate: target > 5% improvement
+    if improvement.improvement_percentage > 5.0 {
+        improvement.convergence_rate = (improvement.improvement_percentage / 5.0) * 100.0;
+        if improvement.convergence_rate > 100.0 {
+            improvement.convergence_rate = 100.0;
+        }
+    }
+
+    return improvement;
+}
+
+fn compute_learning_progress(episode: LearningEpisode) -> f64 {
+    if length(episode.rewards) == 0 {
+        return 0.0;
+    }
+
+    let sum_reward = 0.0;
+    let i = 0;
+    while i < length(episode.rewards) {
+        sum_reward = sum_reward + episode.rewards[i];
+        i = i + 1;
+    }
+
+    let avg_reward = sum_reward / as_f64(length(episode.rewards));
+    return avg_reward;
+}
+
+// Multi-Episode Learning
+fn run_learning_loop(agent: GRIEAgent, training_texts: array, num_episodes: i32) -> array {
+    let episode_results = [];
+
+    let ep = 0;
+    while ep < num_episodes {
+        let text_idx = ep % length(training_texts);
+        let text = training_texts[text_idx];
+
+        let episode = execute_episode(agent, text, 10);
+        push(episode_results, episode);
+
+        agent.improvement_rate = compute_avg_improvement(episode_results);
+
+        ep = ep + 1;
+    }
+
+    return episode_results;
+}
+
+fn compute_avg_improvement(episodes: array) -> f64 {
+    if length(episodes) < 2 {
+        return 0.0;
+    }
+
+    let last_episode = episodes[length(episodes) - 1];
+    let prev_episode = episodes[length(episodes) - 2];
+
+    let improvement = track_policy_improvement(prev_episode.episode_reward, last_episode.episode_reward);
+    return improvement.improvement_percentage;
+}
+
+// Module exports
+fn export_integration_module() -> any {
+    let module = {};
+    module["create_grie_agent"] = "create_grie_agent";
+    module["compute_reward"] = "compute_reward";
+    module["execute_episode"] = "execute_episode";
+    module["run_learning_loop"] = "run_learning_loop";
+    module["track_policy_improvement"] = "track_policy_improvement";
+    return module;
+}

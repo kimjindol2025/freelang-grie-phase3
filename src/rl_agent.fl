@@ -1,0 +1,441 @@
+// GRIE Phase 3: Module 2 - Reinforcement Learning Agent (800줄)
+// Q-learning, Policy gradient, Value function 근사, 탐사vs활용
+
+struct State {
+    node_id: string,
+    entity_type: string,
+    context: any,
+    feature_vector: array
+}
+
+struct Action {
+    type: string,
+    target_node: string,
+    relation_type: string,
+    confidence: f64
+}
+
+struct QValue {
+    state: string,
+    action: string,
+    value: f64,
+    visit_count: i32
+}
+
+struct RLAgent {
+    q_table: any,
+    learning_rate: f64,
+    discount_factor: f64,
+    epsilon: f64,
+    episode_count: i32,
+    total_reward: f64
+}
+
+struct PolicyGradient {
+    weights: array,
+    learning_rate: f64,
+    entropy_coeff: f64
+}
+
+struct ValueFunction {
+    weights: array,
+    learning_rate: f64,
+    loss: f64
+}
+
+struct ReplayBuffer {
+    experiences: array,
+    capacity: i32,
+    position: i32
+}
+
+// Q-Learning Implementation
+fn create_rl_agent() -> RLAgent {
+    let agent = RLAgent {
+        q_table: {},
+        learning_rate: 0.1,
+        discount_factor: 0.95,
+        epsilon: 0.1,
+        episode_count: 0,
+        total_reward: 0.0
+    };
+    return agent;
+}
+
+fn initialize_q_table(agent: RLAgent, states: array, actions: array) -> any {
+    let q_table = {};
+
+    let i = 0;
+    while i < length(states) {
+        let state = states[i];
+        let state_id = state.node_id;
+
+        let j = 0;
+        while j < length(actions) {
+            let action = actions[j];
+            let key = state_id + "_" + action.type;
+            q_table[key] = 0.0;
+            j = j + 1;
+        }
+
+        i = i + 1;
+    }
+
+    agent.q_table = q_table;
+    return q_table;
+}
+
+fn get_q_value(agent: RLAgent, state: State, action: Action) -> f64 {
+    let key = state.node_id + "_" + action.type;
+    let value = agent.q_table[key];
+    if value == null {
+        return 0.0;
+    }
+    return value;
+}
+
+fn update_q_value(agent: RLAgent, state: State, action: Action, reward: f64, next_state: State, done: bool) -> void {
+    let key = state.node_id + "_" + action.type;
+    let current_q = get_q_value(agent, state, action);
+
+    let max_next_q = 0.0;
+    if !done {
+        max_next_q = compute_max_q_for_state(agent, next_state);
+    }
+
+    let new_q = current_q + agent.learning_rate * (reward + agent.discount_factor * max_next_q - current_q);
+    agent.q_table[key] = new_q;
+
+    agent.total_reward = agent.total_reward + reward;
+}
+
+fn compute_max_q_for_state(agent: RLAgent, state: State) -> f64 {
+    let max_q = -999999.0;
+    let keys = get_q_keys(agent.q_table);
+
+    let i = 0;
+    while i < length(keys) {
+        let key = keys[i];
+        let parts = split_string(key, "_");
+        if length(parts) > 0 && parts[0] == state.node_id {
+            let q_val = agent.q_table[key];
+            if q_val > max_q {
+                max_q = q_val;
+            }
+        }
+        i = i + 1;
+    }
+
+    if max_q == -999999.0 {
+        return 0.0;
+    }
+    return max_q;
+}
+
+fn split_string(str: string, delimiter: string) -> array {
+    let parts = [];
+    let current = "";
+    let i = 0;
+
+    while i < length(str) {
+        let ch = substring(str, i, i + 1);
+        if ch == delimiter {
+            push(parts, current);
+            current = "";
+        } else {
+            current = current + ch;
+        }
+        i = i + 1;
+    }
+
+    if current != "" {
+        push(parts, current);
+    }
+
+    return parts;
+}
+
+fn get_q_keys(q_table: any) -> array {
+    let keys = [];
+    // Simulated implementation
+    return keys;
+}
+
+// Exploration vs Exploitation (ε-greedy)
+fn select_action_epsilon_greedy(agent: RLAgent, state: State, possible_actions: array) -> Action {
+    let rand = random_value();
+
+    if rand < agent.epsilon {
+        // Exploration: random action
+        let idx = random_index(0, length(possible_actions));
+        return possible_actions[idx];
+    } else {
+        // Exploitation: best Q-value action
+        let best_action = possible_actions[0];
+        let best_q = get_q_value(agent, state, best_action);
+
+        let i = 1;
+        while i < length(possible_actions) {
+            let action = possible_actions[i];
+            let q_val = get_q_value(agent, state, action);
+            if q_val > best_q {
+                best_q = q_val;
+                best_action = action;
+            }
+            i = i + 1;
+        }
+
+        return best_action;
+    }
+}
+
+fn random_value() -> f64 {
+    // Simulated random value [0, 1)
+    return 0.5;
+}
+
+fn random_index(min: i32, max: i32) -> i32 {
+    if min >= max {
+        return min;
+    }
+    return min + (max - min) / 2;
+}
+
+// Policy Gradient Methods
+fn create_policy_gradient() -> PolicyGradient {
+    let policy = PolicyGradient {
+        weights: initialize_weights(64),
+        learning_rate: 0.001,
+        entropy_coeff: 0.01
+    };
+    return policy;
+}
+
+fn initialize_weights(size: i32) -> array {
+    let weights = [];
+    let i = 0;
+    while i < size {
+        push(weights, 0.1);
+        i = i + 1;
+    }
+    return weights;
+}
+
+fn compute_policy_logits(state: State, policy: PolicyGradient) -> array {
+    let logits = [];
+    let i = 0;
+    while i < length(policy.weights) {
+        let feat = state.feature_vector[i];
+        if feat != null {
+            let logit = policy.weights[i] * feat;
+            push(logits, logit);
+        }
+        i = i + 1;
+    }
+    return logits;
+}
+
+fn softmax(logits: array) -> array {
+    let probs = [];
+    let max_logit = max_value(logits);
+
+    // Compute exponentials
+    let exps = [];
+    let sum_exp = 0.0;
+    let i = 0;
+    while i < length(logits) {
+        let exp_val = exp_approx(logits[i] - max_logit);
+        push(exps, exp_val);
+        sum_exp = sum_exp + exp_val;
+        i = i + 1;
+    }
+
+    // Normalize
+    i = 0;
+    while i < length(exps) {
+        if sum_exp > 0.0 {
+            push(probs, exps[i] / sum_exp);
+        } else {
+            push(probs, 1.0 / as_f64(length(exps)));
+        }
+        i = i + 1;
+    }
+
+    return probs;
+}
+
+fn max_value(arr: array) -> f64 {
+    if length(arr) == 0 {
+        return 0.0;
+    }
+    let max_val = arr[0];
+    let i = 1;
+    while i < length(arr) {
+        if arr[i] > max_val {
+            max_val = arr[i];
+        }
+        i = i + 1;
+    }
+    return max_val;
+}
+
+fn exp_approx(x: f64) -> f64 {
+    // Approximation: e^x ≈ 1 + x + x²/2 + x³/6 (for small x)
+    if x > 10.0 {
+        return 10000.0;
+    }
+    if x < -10.0 {
+        return 0.0001;
+    }
+    let result = 1.0 + x + (x * x) / 2.0 + (x * x * x) / 6.0;
+    return result;
+}
+
+fn compute_policy_loss(action_taken: i32, advantage: f64, probs: array, policy: PolicyGradient) -> f64 {
+    if action_taken < 0 || action_taken >= length(probs) {
+        return 0.0;
+    }
+
+    let action_prob = probs[action_taken];
+    let log_prob = log_approx(action_prob);
+    let entropy = compute_entropy(probs);
+
+    let loss = -log_prob * advantage - policy.entropy_coeff * entropy;
+    return loss;
+}
+
+fn log_approx(x: f64) -> f64 {
+    if x <= 0.0 {
+        return -10.0;
+    }
+    if x >= 1.0 {
+        return 0.0;
+    }
+    // ln(x) ≈ 2(x-1)/(x+1)
+    return 2.0 * (x - 1.0) / (x + 1.0);
+}
+
+fn compute_entropy(probs: array) -> f64 {
+    let entropy = 0.0;
+    let i = 0;
+    while i < length(probs) {
+        let p = probs[i];
+        if p > 0.0 {
+            entropy = entropy - p * log_approx(p);
+        }
+        i = i + 1;
+    }
+    return entropy;
+}
+
+fn update_policy_weights(policy: PolicyGradient, state: State, loss: f64) -> void {
+    let i = 0;
+    while i < length(policy.weights) {
+        let grad = loss * state.feature_vector[i];
+        policy.weights[i] = policy.weights[i] - policy.learning_rate * grad;
+        i = i + 1;
+    }
+}
+
+// Value Function Approximation
+fn create_value_function() -> ValueFunction {
+    let vf = ValueFunction {
+        weights: initialize_weights(64),
+        learning_rate: 0.01,
+        loss: 0.0
+    };
+    return vf;
+}
+
+fn compute_value_estimate(state: State, vf: ValueFunction) -> f64 {
+    let value = 0.0;
+    let i = 0;
+    while i < length(vf.weights) {
+        let feat = state.feature_vector[i];
+        if feat != null {
+            value = value + vf.weights[i] * feat;
+        }
+        i = i + 1;
+    }
+    return value;
+}
+
+fn update_value_weights(vf: ValueFunction, state: State, target_value: f64) -> void {
+    let predicted_value = compute_value_estimate(state, vf);
+    let temporal_difference = target_value - predicted_value;
+    let loss = temporal_difference * temporal_difference;
+
+    vf.loss = loss;
+
+    let i = 0;
+    while i < length(vf.weights) {
+        let feat = state.feature_vector[i];
+        if feat != null {
+            let grad = -2.0 * temporal_difference * feat;
+            vf.weights[i] = vf.weights[i] - vf.learning_rate * grad;
+        }
+        i = i + 1;
+    }
+}
+
+// Experience Replay
+fn create_replay_buffer(capacity: i32) -> ReplayBuffer {
+    let buffer = ReplayBuffer {
+        experiences: [],
+        capacity: capacity,
+        position: 0
+    };
+    return buffer;
+}
+
+fn add_experience(buffer: ReplayBuffer, experience: any) -> void {
+    if length(buffer.experiences) < buffer.capacity {
+        push(buffer.experiences, experience);
+    } else {
+        buffer.experiences[buffer.position] = experience;
+        buffer.position = (buffer.position + 1) % buffer.capacity;
+    }
+}
+
+fn sample_batch(buffer: ReplayBuffer, batch_size: i32) -> array {
+    let batch = [];
+    let i = 0;
+    while i < batch_size && i < length(buffer.experiences) {
+        push(batch, buffer.experiences[i]);
+        i = i + 1;
+    }
+    return batch;
+}
+
+// Learning Rate Decay
+fn decay_epsilon(agent: RLAgent, decay_rate: f64) -> void {
+    agent.epsilon = agent.epsilon * decay_rate;
+    if agent.epsilon < 0.01 {
+        agent.epsilon = 0.01;
+    }
+}
+
+fn decay_learning_rate(agent: RLAgent, decay_rate: f64) -> void {
+    agent.learning_rate = agent.learning_rate * decay_rate;
+    if agent.learning_rate < 0.001 {
+        agent.learning_rate = 0.001;
+    }
+}
+
+// Agent Training Step
+fn train_step(agent: RLAgent, state: State, action: Action, reward: f64, next_state: State, done: bool) -> void {
+    update_q_value(agent, state, action, reward, next_state, done);
+    agent.episode_count = agent.episode_count + 1;
+    decay_epsilon(agent, 0.999);
+}
+
+// Module exports
+fn export_rl_module() -> any {
+    let module = {};
+    module["create_rl_agent"] = "create_rl_agent";
+    module["select_action_epsilon_greedy"] = "select_action_epsilon_greedy";
+    module["create_policy_gradient"] = "create_policy_gradient";
+    module["create_value_function"] = "create_value_function";
+    module["create_replay_buffer"] = "create_replay_buffer";
+    return module;
+}
